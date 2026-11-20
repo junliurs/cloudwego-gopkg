@@ -27,6 +27,16 @@ type HeaderSink interface {
 	SetString(string, string)
 }
 
+// RawHeaderSink is an optional fast path for sinks that keep header bytes in
+// their own storage: key and value slices alias the decoder's header buffer
+// and are only valid until DecodeTo returns. The sink must copy before
+// retaining anything.
+type RawHeaderSink interface {
+	HeaderSink
+	SetIntRaw(id uint16, value []byte)
+	SetStringRaw(key, value []byte)
+}
+
 func DecodeTo(ctx context.Context, in bufiox.Reader, sink HeaderSink) (DecodeParam, error) {
 	if sink == nil {
 		return DecodeParam{}, fmt.Errorf("nil TTHeader sink")

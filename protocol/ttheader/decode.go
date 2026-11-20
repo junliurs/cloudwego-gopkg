@@ -118,7 +118,11 @@ func decodeInto(ctx context.Context, in bufiox.Reader, intInfo map[uint16]string
 		hdIdx++
 	}
 
-	param.IntInfo, param.StrInfo, err = readKVInfo(hdIdx, headerInfo, intInfo, strInfo, sink)
+	var rawSink RawHeaderSink
+	if sink != nil {
+		rawSink, _ = sink.(RawHeaderSink)
+	}
+	param.IntInfo, param.StrInfo, err = readKVInfo(hdIdx, headerInfo, intInfo, strInfo, sink, rawSink)
 	if err != nil {
 		err = fmt.Errorf("ttHeader read kv info failed, %s, headerInfo=%#x", err.Error(), headerInfo)
 		return
@@ -141,7 +145,7 @@ func IsTTHeader(flagBuf []byte) bool {
 	return binary.BigEndian.Uint32(flagBuf[Size32:])&MagicMask == TTHeaderMagic
 }
 
-func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[string]string, sink HeaderSink) (intKVMap map[uint16]string, strKVMap map[string]string, err error) {
+func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[string]string, sink HeaderSink, raw RawHeaderSink) (intKVMap map[uint16]string, strKVMap map[string]string, err error) {
 	intKVMap, strKVMap = intInfo, strInfo
 	for {
 		var infoID uint8
@@ -161,7 +165,7 @@ func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[stri
 			if strKVMap == nil && sink == nil {
 				strKVMap = make(map[string]string)
 			}
-			_, err = readStrKVInfo(&idx, buf, strKVMap, sink)
+			_, err = readStrKVInfo(&idx, buf, strKVMap, sink, raw)
 			if err != nil {
 				return
 			}
@@ -169,7 +173,7 @@ func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[stri
 			if intKVMap == nil && sink == nil {
 				intKVMap = make(map[uint16]string)
 			}
-			_, err = readIntKVInfo(&idx, buf, intKVMap, sink)
+			_, err = readIntKVInfo(&idx, buf, intKVMap, sink, raw)
 			if err != nil {
 				return
 			}
@@ -177,7 +181,7 @@ func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[stri
 			if strKVMap == nil && sink == nil {
 				strKVMap = make(map[string]string)
 			}
-			if err = readACLToken(&idx, buf, strKVMap, sink); err != nil {
+			if err = readACLToken(&idx, buf, strKVMap, sink, raw); err != nil {
 				return
 			}
 		default:
@@ -187,7 +191,7 @@ func readKVInfo(idx int, buf []byte, intInfo map[uint16]string, strInfo map[stri
 	}
 }
 
-func readIntKVInfo(idx *int, buf []byte, info map[uint16]string, sink HeaderSink) (has bool, err error) {
+func readIntKVInfo(idx *int, buf []byte, info map[uint16]string, sink HeaderSink, raw RawHeaderSink) (has bool, err error) {
 	kvSize, err := Bytes2Uint16(buf, *idx)
 	*idx += 2
 	if err != nil {
@@ -202,21 +206,30 @@ func readIntKVInfo(idx *int, buf []byte, info map[uint16]string, sink HeaderSink
 		if err != nil {
 			return false, fmt.Errorf("error reading int kv info: %s", err.Error())
 		}
-		val, n, err := ReadString2BLen(buf, *idx)
-		*idx += n
-		if err != nil {
-			return false, fmt.Errorf("error reading int kv info: %s", err.Error())
-		}
-		if sink == nil {
-			info[key] = val
+		if raw != nil {
+			val, n, err := ReadString2BLenRaw(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading int kv info: %s", err.Error())
+			}
+			raw.SetIntRaw(key, val)
 		} else {
-			sink.SetInt(key, val)
+			val, n, err := ReadString2BLen(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading int kv info: %s", err.Error())
+			}
+			if sink == nil {
+				info[key] = val
+			} else {
+				sink.SetInt(key, val)
+			}
 		}
 	}
 	return true, nil
 }
 
-func readStrKVInfo(idx *int, buf []byte, info map[string]string, sink HeaderSink) (has bool, err error) {
+func readStrKVInfo(idx *int, buf []byte, info map[string]string, sink HeaderSink, raw RawHeaderSink) (has bool, err error) {
 	kvSize, err := Bytes2Uint16(buf, *idx)
 	*idx += 2
 	if err != nil {
@@ -226,33 +239,57 @@ func readStrKVInfo(idx *int, buf []byte, info map[string]string, sink HeaderSink
 		return false, nil
 	}
 	for i := uint16(0); i < kvSize; i++ {
-		key, n, err := ReadString2BLen(buf, *idx)
-		*idx += n
-		if err != nil {
-			return false, fmt.Errorf("error reading str kv info: %s", err.Error())
-		}
-		val, n, err := ReadString2BLen(buf, *idx)
-		*idx += n
-		if err != nil {
-			return false, fmt.Errorf("error reading str kv info: %s", err.Error())
-		}
-		if sink == nil {
-			info[key] = val
+		if raw != nil {
+			key, n, err := ReadString2BLenRaw(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading str kv info: %s", err.Error())
+			}
+			val, n, err := ReadString2BLenRaw(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading str kv info: %s", err.Error())
+			}
+			raw.SetStringRaw(key, val)
 		} else {
-			sink.SetString(key, val)
+			key, n, err := ReadString2BLen(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading str kv info: %s", err.Error())
+			}
+			val, n, err := ReadString2BLen(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading str kv info: %s", err.Error())
+			}
+			if sink == nil {
+				info[key] = val
+			} else {
+				sink.SetString(key, val)
+			}
 		}
 	}
 	return true, nil
 }
 
 // readACLToken reads acl token
-func readACLToken(idx *int, buf []byte, info map[string]string, sink HeaderSink) error {
-	val, n, err := ReadString2BLen(buf, *idx)
+func readACLToken(idx *int, buf []byte, info map[string]string, sink HeaderSink, raw RawHeaderSink) error {
+	var val string
+	var valRaw []byte
+	var n int
+	var err error
+	if raw != nil {
+		valRaw, n, err = ReadString2BLenRaw(buf, *idx)
+	} else {
+		val, n, err = ReadString2BLen(buf, *idx)
+	}
 	*idx += n
 	if err != nil {
 		return fmt.Errorf("error reading acl token: %s", err.Error())
 	}
-	if sink == nil {
+	if raw != nil {
+		raw.SetStringRaw([]byte(GDPRToken), valRaw)
+	} else if sink == nil {
 		info[GDPRToken] = val
 	} else {
 		sink.SetString(GDPRToken, val)

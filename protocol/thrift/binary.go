@@ -366,9 +366,7 @@ func (p BinaryProtocol) ReadBinary(buf []byte) (b []byte, l int, err error) {
 	if spanCacheEnable {
 		b = spanCache.Copy(buf[4:l])
 	} else {
-		data := buf[4:l]
-		b = make([]byte, len(data))
-		copy(b, data)
+		b = []byte(string(buf[4:l]))
 	}
 	return b, l, nil
 }
@@ -450,10 +448,6 @@ var typeToSize = [256]int8{
 	I64:    8,
 }
 
-func typeSize(t TType) int8 {
-	return typeToSize[uint8(t)]
-}
-
 func skipstr(p unsafe.Pointer, e uintptr) (int, error) {
 	if uintptr(p)+uintptr(4) <= e {
 		n := int(p2i32(p))
@@ -481,7 +475,7 @@ func skipType(p unsafe.Pointer, e uintptr, t TType, maxdepth int) (int, error) {
 	if maxdepth == 0 {
 		return 0, errDepthLimitExceeded
 	}
-	if n := typeSize(t); n > 0 {
+	if n := typeToSize[t]; n > 0 {
 		if uintptr(p)+uintptr(n) > e {
 			return 0, errBufferTooShort
 		}
@@ -499,7 +493,7 @@ func skipType(p unsafe.Pointer, e uintptr, t TType, maxdepth int) (int, error) {
 		if sz < 0 {
 			return 0, errDataLength
 		}
-		ksz, vsz := int(typeSize(kt)), int(typeSize(vt))
+		ksz, vsz := int(typeToSize[kt]), int(typeToSize[vt])
 		if ksz > 0 && vsz > 0 { // fast path, fast skip
 			mapkvsize := (int(sz) * (ksz + vsz))
 			if uintptr(p)+uintptr(6+mapkvsize) > e {
@@ -549,7 +543,7 @@ func skipType(p unsafe.Pointer, e uintptr, t TType, maxdepth int) (int, error) {
 		if sz < 0 {
 			return 0, errDataLength
 		}
-		vsz := int(typeSize(vt))
+		vsz := int(typeToSize[vt])
 		if vsz > 0 { // fast path, fast skip
 			listvsize := int(sz) * vsz
 			if uintptr(p)+uintptr(5+listvsize) > e {
@@ -592,8 +586,8 @@ func skipType(p unsafe.Pointer, e uintptr, t TType, maxdepth int) (int, error) {
 				return i, errBufferTooShort
 			}
 			fi := 0
-			if typeSize(ft) > 0 {
-				fi = int(typeSize(ft))
+			if typeToSize[ft] > 0 {
+				fi = int(typeToSize[ft])
 			} else if ft == STRING {
 				fi, err = skipstr(unsafe.Add(p, i), e)
 			} else {

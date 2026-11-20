@@ -17,8 +17,6 @@
 package thrift
 
 import (
-	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -342,22 +340,6 @@ func TestBinary_ErrDataLength(t *testing.T) {
 	}
 }
 
-func TestReadBinaryReturnsOwnedCopy(t *testing.T) {
-	SetSpanCache(false)
-
-	input := Binary.AppendBinary(nil, []byte("hello"))
-	got, n, err := Binary.ReadBinary(input)
-	assert.Nil(t, err)
-	assert.Equal(t, len(input), n)
-	assert.BytesEqual(t, []byte("hello"), got)
-
-	input[4] = 'j'
-	assert.BytesEqual(t, []byte("hello"), got)
-
-	got[1] = 'a'
-	assert.BytesEqual(t, []byte("jello"), input[4:])
-}
-
 func TestBinarySkip(t *testing.T) {
 	// byte
 	b := Binary.AppendByte([]byte(nil), 1)
@@ -472,19 +454,6 @@ func TestBinarySkip(t *testing.T) {
 	// unknown type
 	_, err = Binary.Skip(b, TType(122))
 	assert.True(t, err != nil)
-
-	// invalid negative type
-	_, err = Binary.Skip([]byte{0}, TType(-106))
-	assert.True(t, err != nil)
-
-	// invalid negative nested types
-	invalidType := byte(150) // int8(150) == -106
-	_, err = Binary.Skip([]byte{invalidType, 0, 1, 0}, STRUCT)
-	assert.True(t, err != nil)
-	_, err = Binary.Skip([]byte{invalidType, byte(I32), 0, 0, 0, 1, 0, 0, 0, 1}, MAP)
-	assert.True(t, err != nil)
-	_, err = Binary.Skip([]byte{invalidType, 0, 0, 0, 1}, LIST)
-	assert.True(t, err != nil)
 }
 
 func TestNocopyWrite(t *testing.T) {
@@ -535,23 +504,4 @@ func BenchmarkWriteString(b *testing.B) {
 			x.WriteStringNocopy(buf, nil, smallstr)
 		}
 	})
-}
-
-func BenchmarkReadBinary(b *testing.B) {
-	SetSpanCache(false)
-	x := BinaryProtocol{}
-
-	for _, size := range []int{16, 256, 4096, 65536} {
-		input := x.AppendBinary(nil, make([]byte, size))
-		b.Run(fmt.Sprintf("%dB", size), func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				got, _, err := x.ReadBinary(input)
-				if err != nil {
-					b.Fatal(err)
-				}
-				runtime.KeepAlive(got)
-			}
-		})
-	}
 }

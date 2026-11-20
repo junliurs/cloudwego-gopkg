@@ -71,6 +71,22 @@ func ReadString2BLen(bytes []byte, off int) (string, int, error) {
 	return string(buf), int(length) + 2, nil
 }
 
+// ReadString2BLenRaw behaves like ReadString2BLen but returns the bytes
+// without converting them to a new string. The result aliases the input
+// buffer and is only valid while that buffer is.
+func ReadString2BLenRaw(bytes []byte, off int) ([]byte, int, error) {
+	length, err := Bytes2Uint16(bytes, off)
+	strLen := int(length)
+	if err != nil {
+		return nil, 0, err
+	}
+	off += 2
+	if len(bytes)-off < strLen {
+		return nil, 0, io.EOF
+	}
+	return bytes[off : off+strLen], int(length) + 2, nil
+}
+
 // WriteByte ...
 func WriteByte(val byte, out bufiox.Writer) error {
 	var buf []byte
