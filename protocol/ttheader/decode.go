@@ -200,6 +200,24 @@ func readIntKVInfo(idx *int, buf []byte, info map[uint16]string, sink HeaderSink
 	if kvSize <= 0 {
 		return false, nil
 	}
+	if batchSink, ok := raw.(BatchRawHeaderSink); ok {
+		batchSink.BeginIntBatch()
+		defer batchSink.EndIntBatch()
+		for i := uint16(0); i < kvSize; i++ {
+			key, err := Bytes2Uint16(buf, *idx)
+			*idx += 2
+			if err != nil {
+				return false, fmt.Errorf("error reading int kv info: %s", err.Error())
+			}
+			val, n, err := ReadString2BLenRaw(buf, *idx)
+			*idx += n
+			if err != nil {
+				return false, fmt.Errorf("error reading int kv info: %s", err.Error())
+			}
+			batchSink.AddIntRaw(key, val)
+		}
+		return true, nil
+	}
 	for i := uint16(0); i < kvSize; i++ {
 		key, err := Bytes2Uint16(buf, *idx)
 		*idx += 2

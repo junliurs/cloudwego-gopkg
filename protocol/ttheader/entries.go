@@ -37,6 +37,17 @@ type RawHeaderSink interface {
 	SetStringRaw(key, value []byte)
 }
 
+// BatchRawHeaderSink is an optional extension for sinks that can commit a
+// group of integer entries with one block sync/seal. AddIntRaw is called
+// between BeginIntBatch and EndIntBatch; the value aliases the decoder buffer
+// and must be copied before returning.
+type BatchRawHeaderSink interface {
+	RawHeaderSink
+	BeginIntBatch()
+	AddIntRaw(id uint16, value []byte)
+	EndIntBatch()
+}
+
 func DecodeTo(ctx context.Context, in bufiox.Reader, sink HeaderSink) (DecodeParam, error) {
 	if sink == nil {
 		return DecodeParam{}, fmt.Errorf("nil TTHeader sink")
